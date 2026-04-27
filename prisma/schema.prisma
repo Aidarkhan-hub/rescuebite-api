@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  RECIPIENT
+  DONOR
+  ADMIN
+}
+
+enum FoodStatus {
+  FRESH
+  DISCOUNTED
+  FREE
+  COMPOST
+}
+
+enum Allergen {
+  GLUTEN
+  CRUSTACEANS
+  EGGS
+  FISH
+  PEANUTS
+  SOY
+  DAIRY
+  NUTS
+  CELERY
+  MUSTARD
+  SESAME
+  SULPHITES
+  LUPIN
+  MOLLUSCS
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.VarChar(254)
+  name         String    @db.VarChar(120)
+  passwordHash String    @db.VarChar(72)
+  role         Role      @default(RECIPIENT)
+  isActive     Boolean   @default(true)
+  refreshTokenHash String?
+
+  allergenExclusions UserAllergenExclusion[]
+  reservations       Reservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model UserAllergenExclusion {
+  userId   String   @db.Uuid
+  allergen Allergen
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, allergen])
+  @@map("user_allergen_exclusions")
+}
+
+model FoodBag {
+  id                 String     @id @default(uuid()) @db.Uuid
+  title              String     @db.VarChar(200)
+  description        String?    @db.Text
+  originalPriceCents Int
+  currentPriceCents  Int
+  quantity           Int        @default(1)
+  status             FoodStatus @default(FRESH)
+  pickupDeadline     DateTime
+  publishedAt        DateTime?
+
+  allergens    FoodBagAllergen[]
+  reservations Reservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("food_bags")
+}
+
+model FoodBagAllergen {
+  foodBagId String   @db.Uuid
+  allergen  Allergen
+  foodBag   FoodBag  @relation(fields: [foodBagId], references: [id], onDelete: Cascade)
+
+  @@id([foodBagId, allergen])
+  @@map("food_bag_allergens")
+}
+
+model Reservation {
+  id             String  @id @default(uuid()) @db.Uuid
+  foodBagId      String  @db.Uuid
+  userId         String  @db.Uuid
+  pricePaidCents Int
+  status         String  @default("PENDING")
+
+  foodBag FoodBag @relation(fields: [foodBagId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("reservations")
+}
