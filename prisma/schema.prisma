@@ -7,9 +7,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ================================================================
+// ENUMS
+// ================================================================
+
 enum Role {
   RECIPIENT
   DONOR
+  DRIVER
   ADMIN
 }
 
@@ -44,6 +49,23 @@ enum ReservationStatus {
   COMPLETED
 }
 
+enum OrderStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AuctionStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+// ================================================================
+// MODELS
+// ================================================================
+
 model User {
   id               String  @id @default(uuid()) @db.Uuid
   email            String  @unique @db.VarChar(254)
@@ -61,12 +83,19 @@ model User {
   passwordResetToken     String?   @db.VarChar(255)
   passwordResetExpiresAt DateTime?
 
+  // Relations
   allergenExclusions UserAllergenExclusion[]
   reservations       Reservation[]
+  restaurants        Restaurant[]            // DONOR owns restaurants
+  ordersAsDriver     Order[]                 // DRIVER delivers orders
+  ratings            Rating[]               // RECIPIENT rates restaurants
+  auctionBids        AuctionBid[]           // DRIVER bids in auctions
+  auditLogs          AuditLog[]             // actions performed by this user
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([role])
   @@map("users")
 }
 
@@ -79,6 +108,38 @@ model UserAllergenExclusion {
   @@map("user_allergen_exclusions")
 }
 
+// ================================================================
+// RESTAURANT
+// ================================================================
+
+model Restaurant {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @db.VarChar(200)
+  address     String  @db.VarChar(500)
+  locationLat Float
+  locationLng Float
+  closingTime String  @db.VarChar(5)  // e.g. "22:00"
+  isApproved  Boolean @default(false)
+  rating      Float   @default(0)
+  ownerId     String  @db.Uuid
+
+  // Relations
+  owner    User      @relation(fields: [ownerId], references: [id])
+  foodBags FoodBag[]
+  ratings  Rating[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([isApproved])
+  @@map("restaurants")
+}
+
+// ================================================================
+// FOOD BAG
+// ================================================================
+
 model FoodBag {
   id                 String     @id @default(uuid()) @db.Uuid
   title              String     @db.VarChar(200)
@@ -89,13 +150,19 @@ model FoodBag {
   status             FoodStatus @default(FRESH)
   pickupDeadline     DateTime
   publishedAt        DateTime?
+  restaurantId       String?    @db.Uuid  // optional: linked to restaurant
 
+  // Relations
   allergens    FoodBagAllergen[]
   reservations Reservation[]
+  restaurant   Restaurant?       @relation(fields: [restaurantId], references: [id])
+  auctions     Auction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([status, pickupDeadline])
+  @@index([restaurantId])
   @@map("food_bags")
 }
 
@@ -107,6 +174,10 @@ model FoodBagAllergen {
   @@id([foodBagId, allergen])
   @@map("food_bag_allergens")
 }
+
+// ================================================================
+// RESERVATION
+// ================================================================
 
 model Reservation {
   id             String            @id @default(uuid()) @db.Uuid
@@ -121,5 +192,106 @@ model Reservation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([userId])
+  @@index([foodBagId])
   @@map("reservations")
+}
+
+// ================================================================
+// ORDER (for DRIVER delivery flow)
+// ================================================================
+
+model Order {
+  id           String      @id @default(uuid()) @db.Uuid
+  reservationId String     @unique @db.Uuid
+  driverId     String?     @db.Uuid
+  status       OrderStatus @default(PENDING)
+  deliveryLat  Float?      // destination coordinates
+  deliveryLng  Float?
+
+  driver      User?       @relation(fields: [driverId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([driverId])
+  @@index([status])
+  @@map("orders")
+}
+
+// ================================================================
+// FLASH AUCTION
+// ================================================================
+
+model Auction {
+  id         String        @id @default(uuid()) @db.Uuid
+  foodBagId  String        @db.Uuid
+  status     AuctionStatus @default(ACTIVE)
+  startedAt  DateTime      @default(now())
+  endsAt     DateTime
+
+  foodBag FoodBag      @relation(fields: [foodBagId], references: [id])
+  bids    AuctionBid[]
+
+  @@index([status])
+  @@index([foodBagId])
+  @@map("auctions")
+}
+
+model AuctionBid {
+  id        String @id @default(uuid()) @db.Uuid
+  auctionId String @db.Uuid
+  driverId  String @db.Uuid
+  bidAmount Int    // in cents
+
+  auction Auction @relation(fields: [auctionId], references: [id])
+  driver  User    @relation(fields: [driverId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([auctionId])
+  @@index([driverId])
+  @@map("auction_bids")
+}
+
+// ================================================================
+// RATING
+// ================================================================
+
+model Rating {
+  id           String @id @default(uuid()) @db.Uuid
+  userId       String @db.Uuid
+  restaurantId String @db.Uuid
+  score        Int    // 1-5
+
+  user       User       @relation(fields: [userId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, restaurantId]) // one rating per user per restaurant
+  @@index([restaurantId])
+  @@map("ratings")
+}
+
+// ================================================================
+// AUDIT LOG
+// ================================================================
+
+model AuditLog {
+  id         String @id @default(uuid()) @db.Uuid
+  actorId    String @db.Uuid        // who performed the action
+  action     String @db.VarChar(100) // e.g. "TOGGLE_USER", "APPROVE_RESTAURANT"
+  targetType String @db.VarChar(50)  // e.g. "User", "Restaurant"
+  targetId   String @db.Uuid        // ID of affected entity
+  metadata   Json?                  // extra info
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([action])
+  @@index([targetId])
+  @@map("audit_logs")
 }

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: RescueBite API
-  description: Real-time food waste recovery marketplace — surplus food redistribution platform
+  description: Real-time food waste recovery marketplace - surplus food redistribution platform
   version: 2.0.0
 
 servers:
@@ -115,6 +115,77 @@ components:
           type: integer
           example: 300
 
+
+    Restaurant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Dastarkhan Restaurant"
+        address:
+          type: string
+          example: "ul. Abaya 10, Almaty"
+        locationLat:
+          type: number
+          example: 43.2389
+        locationLng:
+          type: number
+          example: 76.9457
+        closingTime:
+          type: string
+          example: "22:00"
+        isApproved:
+          type: boolean
+          example: false
+        rating:
+          type: number
+          example: 4.5
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reservationId:
+          type: string
+          format: uuid
+        driverId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, COMPLETED, CANCELLED]
+          example: "PENDING"
+        deliveryLat:
+          type: number
+          nullable: true
+        deliveryLng:
+          type: number
+          nullable: true
+
+    Auction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        foodBagId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ACTIVE, COMPLETED, CANCELLED]
+          example: "ACTIVE"
+        endsAt:
+          type: string
+          format: date-time
+          example: "2026-05-13T22:10:00Z"
+
 security:
   - BearerAuth: []
 
@@ -128,7 +199,7 @@ paths:
     post:
       tags: [Auth]
       summary: Register a new user
-      description: Creates account and sends verification email. Returns NO tokens — user must verify email first.
+      description: Creates account and sends verification email. Returns NO tokens - user must verify email first.
       security: []
       requestBody:
         required: true
@@ -155,7 +226,7 @@ paths:
                   example: "RECIPIENT"
       responses:
         "201":
-          description: Registration successful — verification email sent
+          description: Registration successful - verification email sent
           content:
             application/json:
               schema:
@@ -315,7 +386,7 @@ paths:
   /auth/logout:
     post:
       tags: [Auth]
-      summary: Logout — invalidates refresh token
+      summary: Logout - invalidates refresh token
       responses:
         "200":
           description: Logged out successfully
@@ -450,7 +521,7 @@ paths:
     get:
       tags: [Food]
       summary: List available food bags with cursor pagination
-      description: Supports allergy filtering — excludes bags containing user's excluded allergens.
+      description: Supports allergy filtering - excludes bags containing user's excluded allergens.
       parameters:
         - name: cursor
           in: query
@@ -472,6 +543,17 @@ paths:
             type: string
             enum: [FRESH, DISCOUNTED, FREE]
           example: "DISCOUNTED"
+        - name: excludeAllergens
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [GLUTEN, CRUSTACEANS, EGGS, FISH, PEANUTS, SOY, DAIRY, NUTS, CELERY, MUSTARD, SESAME, SULPHITES, LUPIN, MOLLUSCS]
+          style: form
+          explode: false
+          description: Exclude food bags containing these allergens
+          example: ["GLUTEN", "DAIRY"]
       responses:
         "200":
           description: Paginated list of food bags
@@ -595,6 +677,12 @@ paths:
                     example: true
                   data:
                     $ref: "#/components/schemas/FoodBag"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Food bag not found
           content:
@@ -632,7 +720,7 @@ paths:
                   example: 1
       responses:
         "201":
-          description: Reservation created — confirmation email sent
+          description: Reservation created - confirmation email sent
           content:
             application/json:
               schema:
@@ -668,11 +756,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /reservations/{id}/cancel:
-    patch:
+  /food/reservations/{id}:
+    delete:
       tags: [Reservations]
-      summary: Cancel a reservation
-      description: Only PENDING reservations can be cancelled. Restores stock quantity.
+      summary: Cancel a reservation (RECIPIENT only)
+      description: Only PENDING reservations can be cancelled. Restores stock quantity atomically via Prisma transaction.
       parameters:
         - name: id
           in: path
@@ -696,7 +784,13 @@ paths:
                     type: string
                     example: "Reservation cancelled"
         "400":
-          description: Cannot cancel — not PENDING or not your reservation
+          description: Cannot cancel - not PENDING or not your reservation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
           content:
             application/json:
               schema:
@@ -776,7 +870,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /admin/users/{id}/toggle:
+  /admin/users/{id}/toggle-active:
     patch:
       tags: [Admin]
       summary: Toggle user active/inactive (ADMIN only)
@@ -787,6 +881,7 @@ paths:
           schema:
             type: string
             format: uuid
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
       responses:
         "200":
           description: User status toggled
@@ -806,9 +901,22 @@ paths:
                         format: uuid
                       email:
                         type: string
+                        example: "asel@gmail.com"
                       isActive:
                         type: boolean
                         example: false
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: User not found
           content:
@@ -826,11 +934,14 @@ paths:
           schema:
             type: integer
             default: 1
+          example: 1
         - name: limit
           in: query
           schema:
             type: integer
             default: 20
+            maximum: 100
+          example: 20
       responses:
         "200":
           description: Paginated list of all food bags
@@ -851,12 +962,37 @@ paths:
                           $ref: "#/components/schemas/FoodBag"
                       pagination:
                         type: object
+                        properties:
+                          page:
+                            type: integer
+                            example: 1
+                          limit:
+                            type: integer
+                            example: 20
+                          total:
+                            type: integer
+                            example: 84
+                          pages:
+                            type: integer
+                            example: 5
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
-  /admin/queue/stats:
+  /admin/queue-stats:
     get:
       tags: [Admin]
       summary: Get email queue statistics (ADMIN only)
-      description: Shows BullMQ job counts — waiting, active, completed, failed, delayed.
+      description: Shows BullMQ job counts - waiting, active, completed, failed, delayed.
       responses:
         "200":
           description: Queue statistics
@@ -889,3 +1025,553 @@ paths:
                       delayed:
                         type: integer
                         example: 0
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+# ================================================================
+  # RESTAURANTS
+  # ================================================================
+
+  /restaurants:
+    get:
+      tags: [Restaurants]
+      summary: List approved restaurants with cursor pagination
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+      responses:
+        "200":
+          description: Paginated list of restaurants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Restaurant"
+                  meta:
+                    type: object
+                    properties:
+                      nextCursor:
+                        type: string
+                        nullable: true
+                      hasMore:
+                        type: boolean
+
+    post:
+      tags: [Restaurants]
+      summary: Create a restaurant (DONOR only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, address, locationLat, locationLng, closingTime]
+              properties:
+                name:
+                  type: string
+                  example: "Dastarkhan Restaurant"
+                address:
+                  type: string
+                  example: "ul. Abaya 10, Almaty"
+                locationLat:
+                  type: number
+                  example: 43.2389
+                locationLng:
+                  type: number
+                  example: 76.9457
+                closingTime:
+                  type: string
+                  example: "22:00"
+      responses:
+        "201":
+          description: Restaurant created (pending admin approval)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Restaurant"
+        "403":
+          description: DONOR role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /restaurants/{id}:
+    get:
+      tags: [Restaurants]
+      summary: Get restaurant by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Restaurant details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Restaurant"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /restaurants/{id}/rate:
+    post:
+      tags: [Restaurants]
+      summary: Rate a restaurant (RECIPIENT only, once per restaurant)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [score]
+              properties:
+                score:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  example: 4
+      responses:
+        "201":
+          description: Rating saved, restaurant average updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      score:
+                        type: integer
+                        example: 4
+        "403":
+          description: RECIPIENT role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /restaurants/{id}/approve:
+    patch:
+      tags: [Restaurants]
+      summary: Approve a restaurant (ADMIN only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Restaurant approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Restaurant"
+        "403":
+          description: ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /restaurants/{id}/block:
+    patch:
+      tags: [Restaurants]
+      summary: Block a restaurant (ADMIN only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Restaurant blocked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Restaurant"
+        "403":
+          description: ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ================================================================
+  # DRIVER
+  # ================================================================
+
+  /driver/orders:
+    get:
+      tags: [Driver]
+      summary: List available orders for pickup (DRIVER only)
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: List of available orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Order"
+                  meta:
+                    type: object
+                    properties:
+                      nextCursor:
+                        type: string
+                        nullable: true
+                      hasMore:
+                        type: boolean
+        "403":
+          description: DRIVER role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /driver/orders/{id}/accept:
+    patch:
+      tags: [Driver]
+      summary: Accept an order (DRIVER only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Order accepted, status set to IN_PROGRESS
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Order"
+        "409":
+          description: Order already taken or not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /driver/orders/{id}/location:
+    post:
+      tags: [Driver]
+      summary: Update driver GPS location — auto-completes if within 100m of destination
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng]
+              properties:
+                lat:
+                  type: number
+                  example: 43.2389
+                lng:
+                  type: number
+                  example: 76.9457
+      responses:
+        "200":
+          description: Location updated. If arrived=true, order is COMPLETED.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      order:
+                        $ref: "#/components/schemas/Order"
+                      arrived:
+                        type: boolean
+                        example: false
+                      distanceMeters:
+                        type: number
+                        example: 342.5
+
+  /driver/history:
+    get:
+      tags: [Driver]
+      summary: Get driver delivery history (DRIVER only)
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Completed and cancelled orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Order"
+
+  # ================================================================
+  # AUCTIONS
+  # ================================================================
+
+  /auctions:
+    get:
+      tags: [Auctions]
+      summary: List active flash auctions (DRIVER only)
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Active auctions with current lowest bid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Auction"
+        "403":
+          description: DRIVER role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auctions/{id}/bid:
+    post:
+      tags: [Auctions]
+      summary: Place a bid on an auction (DRIVER only) — lowest bid wins
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bidAmount]
+              properties:
+                bidAmount:
+                  type: integer
+                  description: Delivery fee offer in cents
+                  example: 50000
+      responses:
+        "201":
+          description: Bid placed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      auctionId:
+                        type: string
+                        format: uuid
+                      bidAmount:
+                        type: integer
+                        example: 50000
+        "400":
+          description: Auction expired or not active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: DRIVER role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auctions/{id}/close:
+    patch:
+      tags: [Auctions]
+      summary: Close an auction manually (ADMIN only) — winner is lowest bid
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Auction closed, winner determined
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      winner:
+                        type: object
+                        nullable: true
+                        properties:
+                          driverId:
+                            type: string
+                            format: uuid
+                          bidAmount:
+                            type: integer
+                            example: 50000
+                      status:
+                        type: string
+                        enum: [COMPLETED, CANCELLED]
+        "403":
+          description: ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"

@@ -104,7 +104,7 @@ export function startEmailWorker(): Worker {
     console.error(`[EmailWorker]  ${job?.id} (${job?.name}) failed: ${err.message}`)
   );
 
-  return worker;
+  return worker as any;
 }
 
 // ─── Enqueue helpers ──────────────────────────────────────────────────────────
