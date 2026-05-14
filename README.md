@@ -1,157 +1,215 @@
-# RescueBite Backend 🥡
+Получить бесплатный ключ на [resend.com](https://resend.com).
 
-Real-time food waste recovery marketplace for Almaty restaurants.
-Built with **Node.js + Express + Prisma 5 + PostgreSQL + Redis + TypeScript**.
+### 4. Применить миграции
 
----
-
-##  Quick Start (Docker)
-
-### 1. Prerequisites
-- Docker Desktop (running)
-- Node.js 20+
-
-### 2. Clone & configure
 ```bash
-git clone <repo-url>
-cd rescuebite-backend
-cp .env.example .env
-```
-
-Open `.env` — the default values already match `docker-compose.yml`. No changes needed for local dev.
-
-### 3. Start infrastructure
-```bash
-docker compose up -d
-```
-
-Check containers are healthy:
-```bash
-docker compose ps
-# postgres: healthy, redis: healthy
-```
-
-**Fix for P1000 Auth error:** Make sure `.env` `DATABASE_URL` matches docker-compose credentials exactly:
-```
-DATABASE_URL="postgresql://rescuebite:rescuebite_secret@localhost:5432/rescuebite"
-```
-
-### 4. Install dependencies & run migrations
-```bash
-npm install
+npx prisma migrate deploy
 npx prisma generate
-npx prisma migrate dev --name init
 ```
 
-### 5. Start the API server
+### 5. Запустить сервер
+
 ```bash
 npm run dev
 ```
 
-API: `http://localhost:3000`
-Swagger UI: `http://localhost:3000/docs`
-Health: `http://localhost:3000/health`
+- API: `http://localhost:3000`
+- Swagger UI: `http://localhost:3000/docs`
 
 ---
 
-##  Tests
+## Переменные окружения
 
-```bash
-npm test                  # all tests
-npm run test:coverage     # with coverage report
-```
-
-Unit tests run **without** DB/Redis. Integration tests require running containers.
-
----
-
-##  Project Structure
-
-```
-src/
-├── config/        # env validation, Prisma singleton, Redis client
-├── controllers/   # HTTP req/res handlers (no business logic)
-├── middleware/     # JWT auth, RBAC, rate limiter, error handler
-├── routes/        # URL definitions
-├── services/      # Business logic (auth, allergens, state machine, reservations)
-├── workers/       # Cron jobs (decay worker every 15 min)
-└── utils/         # asyncHandler, custom errors
-prisma/
-├── schema.prisma  # Single source of truth for DB schema
-tests/
-├── unit/          # Pure function tests (no DB/Redis)
-└── integration/   # Endpoint tests (requires running Docker)
-```
+| Переменная | Обязательная | Описание |
+|---|---|---|
+| `DATABASE_URL` | ✅ | PostgreSQL строка подключения |
+| `REDIS_URL` | ✅ | Redis строка подключения |
+| `REDIS_HOST` | ✅ | Redis хост (для BullMQ) |
+| `REDIS_PORT` | ✅ | Redis порт (для BullMQ) |
+| `JWT_ACCESS_SECRET` | ✅ | Минимум 32 символа |
+| `JWT_REFRESH_SECRET` | ✅ | Минимум 32 символа |
+| `RESEND_API_KEY` | ✅ | С resend.com |
+| `APP_URL` | — | База для ссылок в письмах. По умолчанию `http://localhost:3000` |
+| `JWT_ACCESS_EXPIRES_IN` | — | По умолчанию `15m` |
+| `JWT_REFRESH_EXPIRES_IN` | — | По умолчанию `7d` |
+| `DECAY_INTERVAL_MINUTES` | — | По умолчанию `15` |
+| `DECAY_PERCENTAGE` | — | По умолчанию `10` |
+| `MIN_FOOD_PRICE_CENTS` | — | По умолчанию `50000` (500 KZT) |
+| `AUCTION_TRIGGER_MINUTES` | — | По умолчанию `30` |
 
 ---
 
-##  Auth Flow
+## Тестирование через Postman
 
-```
-POST /api/v1/auth/register  → { user, tokens: { accessToken, refreshToken } }
-POST /api/v1/auth/login     → { user, tokens }
-POST /api/v1/auth/refresh   → { tokens }
-POST /api/v1/auth/logout    → 200 OK  (Bearer token required)
-GET  /api/v1/auth/me        → { id, email, role }
-```
+### Шаг 1 — Регистрация
 
-- Access token: 15-minute expiry
-- Refresh token: 7-day expiry, stored as bcrypt hash in DB
-- Rate limiting: 5 attempts/min per IP on register + login
+```http
+POST /api/v1/auth/register
+Content-Type: application/json
 
----
-
-##  Food Bag State Machine
-
-```
-FRESH → DISCOUNTED → FREE → COMPOST
-  └──────────────────────────┘
-        (any → COMPOST)
-```
-
-Decay worker runs every 15 minutes:
-- Applies `-10%` price decay to FRESH/DISCOUNTED bags
-- Floor: 50,000 cents (configurable via `MIN_FOOD_PRICE_CENTS`)
-- Within 30 min of deadline → status becomes FREE
-- Past deadline → COMPOST
-
----
-
-##  EU 14 Allergens
-
-`POST /api/v1/food/allergens/parse`
-```json
 {
-  "ingredients": ["wheat flour", "egg", "milk"],
-  "userAllergens": ["GLUTEN", "DAIRY"]
+  "email": "donor@test.com",
+  "name": "Test Donor",
+  "password": "Test1234!"
 }
 ```
-Returns detected allergens, safety flag, and per-ingredient breakdown.
+
+### Шаг 2 — Подтверждение email
+
+Получить токен из БД:
+
+```sql
+SELECT "emailVerificationToken" FROM users WHERE email = 'donor@test.com';
+```
+
+```http
+GET /api/v1/auth/verify-email?token=<token>
+```
+
+### Шаг 3 — Логин
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "donor@test.com",
+  "password": "Test1234!"
+}
+```
+
+Сохранить `accessToken` и `refreshToken` из ответа.
+
+### Шаг 4 — Создать food bag (роль DONOR)
+
+```http
+POST /api/v1/food
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "title": "Sushi Combo Box",
+  "description": "6 роллов, истекает сегодня вечером",
+  "originalPriceCents": 250000,
+  "quantity": 3,
+  "pickupDeadline": "2027-06-30T20:00:00Z",
+  "allergens": ["FISH"]
+}
+```
+
+### Шаг 5 — Забронировать пакет (роль RECIPIENT)
+
+```http
+POST /api/v1/food/<bagId>/reserve
+Authorization: Bearer <recipientToken>
+Content-Type: application/json
+
+{
+  "quantity": 1
+}
+```
+
+### Шаг 6 — Отменить бронь
+
+```http
+DELETE /api/v1/food/reservations/<reservationId>
+Authorization: Bearer <recipientToken>
+```
+
+### Шаг 7 — Обновить токен
+
+```http
+POST /api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "<refreshToken>"
+}
+```
+
+### Admin эндпоинты (только роль ADMIN)
+
+```http
+GET    /api/v1/admin/users
+PATCH  /api/v1/admin/users/:id/toggle-active
+GET    /api/v1/admin/food-bags
+GET    /api/v1/admin/queue-stats
+```
 
 ---
 
-##  Environment Variables
+## Архитектурные решения
 
-| Variable | Description | Default |
-|---|---|---|
-| `DATABASE_URL` | PostgreSQL connection string | required |
-| `REDIS_URL` | Redis connection string | required |
-| `JWT_ACCESS_SECRET` | Min 32 chars | required |
-| `JWT_REFRESH_SECRET` | Min 32 chars | required |
-| `JWT_ACCESS_EXPIRES_IN` | Access token TTL | `15m` |
-| `JWT_REFRESH_EXPIRES_IN` | Refresh token TTL | `7d` |
-| `DECAY_INTERVAL_MINUTES` | Cron interval | `15` |
-| `DECAY_PERCENTAGE` | % price drop per interval | `10` |
-| `MIN_FOOD_PRICE_CENTS` | Price floor in cents | `50000` |
-| `AUCTION_TRIGGER_MINUTES` | Minutes before deadline for FREE | `30` |
+### Деньги хранятся в целых числах (cents)
+
+Все цены хранятся как `INT` в тийынах (1 KZT = 100 тийын, т.е. 1000 KZT = 100000). Арифметика с плавающей точкой ненадёжна: `0.1 + 0.2 = 0.30000000000000004` в IEEE 754. Целочисленная арифметика точна и не накапливает ошибок.
+
+### Refresh токены хранятся хэшированными
+
+В БД никогда не хранится сам токен — только его bcrypt-хэш в `users.refreshTokenHash`. При утечке базы данных хэши нельзя использовать напрямую для вызова `/refresh`, потому что bcrypt — односторонняя функция. При каждом использовании токен ротируется и старый хэш перезаписывается.
+
+### Redis distributed lock для резервирования
+
+`SET key requestId EX 30 NX` — атомарная операция на уровне Redis. `NX` означает "установить только если ключ не существует" — два конкурентных запроса не могут оба получить `OK`. `EX 30` — TTL на случай краша процесса, чтобы лок не висел вечно. Это исключает oversell когда несколько пользователей одновременно берут последний пакет.
+
+### State machine в TypeScript, не в SQL триггерах
+
+Переходы `FRESH → DISCOUNTED → FREE → COMPOST` описаны в `src/services/foodStateMachine.ts`. Логика на уровне приложения легче тестируется (чистые функции без side-effects), проще ревьюится и не привязана к конкретной БД. SQL триггеры невидимы при code review.
+
+### BullMQ для отправки email
+
+Отправка email вынесена в фоновую очередь. API отвечает немедленно, не дожидаясь ответа от Resend. Если Resend временно недоступен — BullMQ автоматически повторяет job. Медленная или упавшая почта не влияет на latency API.
+
+### Cursor pagination вместо offset
+
+`OFFSET 10000 LIMIT 20` требует просканировать и выбросить 10 000 строк. Cursor pagination (`WHERE id > cursor LIMIT 20`) использует индекс и работает за O(1) независимо от размера таблицы. Также стабилен при параллельных вставках — offset пропускает строки если новые записи добавляются перед курсором.
+
+### Prisma ORM без raw SQL
+
+Все запросы через Prisma — нет SQL injection по определению, схема типобезопасна на уровне TypeScript, миграции версионируются в git. Raw SQL запрещён в кодовой базе.
 
 ---
 
-##  Architecture Notes
+## Фоновые задачи
 
-- **Zero raw SQL** — all DB access via Prisma ORM
-- **Money in INTEGER cents** — no float arithmetic
-- **Redis distributed lock** during checkout prevents overselling
-- **Sliding window rate limiter** — Redis INCR + EXPIRE
-- **RBAC** — roles: `RECIPIENT`, `DONOR`, `ADMIN`
-- See `ARCHITECTURE.md` for detailed design decisions
+### Decay Worker (`src/workers/decayWorker.ts`)
+
+Запускается каждые 15 минут (настраивается через `DECAY_INTERVAL_MINUTES`). Для каждого активного food bag:
+
+1. Если дедлайн прошёл → статус `COMPOST`, цена = 0
+2. Если до дедлайна осталось меньше `AUCTION_TRIGGER_MINUTES` → статус `FREE`, цена = 0
+3. Иначе → снизить цену на `DECAY_PERCENTAGE`%, минимум `MIN_FOOD_PRICE_CENTS`
+
+### Email Worker (`src/config/queue.ts`)
+
+BullMQ воркер обрабатывает очередь `email`. События:
+
+| Тип | Триггер |
+|---|---|
+| `verify-email` | Регистрация |
+| `password-reset` | Запрос сброса пароля |
+| `reservation-confirmed` | Успешное бронирование |
+| `reservation-cancelled` | Отмена брони |
+
+---
+
+## Запуск тестов
+
+```bash
+# Все тесты
+npm test
+
+# С отчётом покрытия
+npm run test:coverage
+
+# Один файл
+npx jest tests/integration/reservation.test.ts
+```
+
+Тесты мокают email очередь и BullMQ воркер. Требуется запущенный PostgreSQL (предоставляется docker-compose).
+
+**Результат:** 7 тест-сьютов, 55 тестов, 0 упавших.
+
+---
+
+## Структура проекта

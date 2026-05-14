@@ -1,0 +1,1 @@
+jest.mock('../src/config/queue', () => ({ enqueueVerificationEmail: jest.fn().mockResolvedValue(undefined), enqueuePasswordResetEmail: jest.fn().mockResolvedValue(undefined), enqueueReservationConfirmation: jest.fn().mockResolvedValue(undefined), enqueuePickupReminder: jest.fn().mockResolvedValue(undefined) }));

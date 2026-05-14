@@ -18,12 +18,19 @@ const envSchema = z.object({
   AUCTION_TRIGGER_MINUTES: z.string().default("30"),
 
   CORS_ORIGIN: z.string().default("http://localhost:3001"),
+
+  RESEND_API_KEY: z.string().min(1, "RESEND_API_KEY is required"),
+  APP_URL: z.string().default("http://localhost:3000"),
+
+  REDIS_HOST: z.string().default("localhost"),
+  REDIS_PORT: z.string().default("6379"),
+  REDIS_PASSWORD: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
-  console.error("❌ Invalid environment variables:");
+  console.error(" Invalid environment variables:");
   console.error(parsed.error.flatten().fieldErrors);
   process.exit(1);
 }
@@ -42,4 +49,9 @@ export const env = {
   minFoodPriceCents: parseInt(parsed.data.MIN_FOOD_PRICE_CENTS, 10),
   auctionTriggerMinutes: parseInt(parsed.data.AUCTION_TRIGGER_MINUTES, 10),
   corsOrigin: parsed.data.CORS_ORIGIN,
+  RESEND_API_KEY: parsed.data.RESEND_API_KEY,
+  APP_URL: parsed.data.APP_URL,
+  REDIS_HOST: parsed.data.REDIS_HOST,
+  REDIS_PORT: parseInt(parsed.data.REDIS_PORT, 10),
+  REDIS_PASSWORD: parsed.data.REDIS_PASSWORD,
 } as const;

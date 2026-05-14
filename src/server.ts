@@ -3,16 +3,19 @@ import { env } from "./config/env";
 import { prisma } from "./config/prisma";
 import { redis } from "./config/redis";
 import { startDecayWorker } from "./workers/decayWorker";
+import { startEmailWorker } from "./config/queue";
 
 async function main() {
-  // Connect Redis
   await redis.connect();
+  console.log(" Redis connected");
 
   await prisma.$connect();
   console.log(" PostgreSQL connected");
 
   if (env.nodeEnv !== "test") {
     startDecayWorker();
+    startEmailWorker();
+    console.log(" Workers started");
   }
 
   const server = app.listen(env.port, () => {
@@ -21,7 +24,7 @@ async function main() {
   });
 
   const shutdown = async (signal: string) => {
-    console.log(`\n${signal} received — shutting down...`);
+    console.log(`\n${signal} received — shutting down gracefully...`);
     server.close(async () => {
       await prisma.$disconnect();
       await redis.quit();

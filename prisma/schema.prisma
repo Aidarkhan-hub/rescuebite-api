@@ -37,14 +37,29 @@ enum Allergen {
   MOLLUSCS
 }
 
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
 model User {
-  id               String    @id @default(uuid()) @db.Uuid
-  email            String    @unique @db.VarChar(254)
-  name             String    @db.VarChar(120)
-  passwordHash     String    @db.VarChar(72)
-  role             Role      @default(RECIPIENT)
-  isActive         Boolean   @default(true)
+  id               String  @id @default(uuid()) @db.Uuid
+  email            String  @unique @db.VarChar(254)
+  name             String  @db.VarChar(120)
+  passwordHash     String  @db.VarChar(72)
+  role             Role    @default(RECIPIENT)
+  isActive         Boolean @default(true)
   refreshTokenHash String?
+
+  // Email verification
+  isEmailVerified        Boolean   @default(false)
+  emailVerificationToken String?   @db.VarChar(255)
+
+  // Password reset
+  passwordResetToken     String?   @db.VarChar(255)
+  passwordResetExpiresAt DateTime?
 
   allergenExclusions UserAllergenExclusion[]
   reservations       Reservation[]
@@ -94,11 +109,11 @@ model FoodBagAllergen {
 }
 
 model Reservation {
-  id             String  @id @default(uuid()) @db.Uuid
-  foodBagId      String  @db.Uuid
-  userId         String  @db.Uuid
+  id             String            @id @default(uuid()) @db.Uuid
+  foodBagId      String            @db.Uuid
+  userId         String            @db.Uuid
   pricePaidCents Int
-  status         String  @default("PENDING")
+  status         ReservationStatus @default(PENDING)
 
   foodBag FoodBag @relation(fields: [foodBagId], references: [id])
   user    User    @relation(fields: [userId], references: [id])

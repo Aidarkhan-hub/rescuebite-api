@@ -18,18 +18,21 @@ export type CreateFoodBagInput = z.infer<typeof createFoodBagSchema>;
 export async function createFoodBag(input: CreateFoodBagInput) {
   const { allergens, ...rest } = input;
 
-  return prisma.foodBag.create({
-    data: {
-      ...rest,
-      currentPriceCents: rest.originalPriceCents,
-      pickupDeadline: new Date(rest.pickupDeadline),
-      publishedAt: new Date(),
-      allergens: {
-        create: allergens.map((allergen) => ({ allergen })),
-      },
+return prisma.foodBag.create({
+  data: {
+    title:              rest.title,
+    description:        rest.description,
+    originalPriceCents: rest.originalPriceCents,
+    currentPriceCents:  rest.originalPriceCents,
+    quantity:           rest.quantity,
+    pickupDeadline:     new Date(rest.pickupDeadline),
+    publishedAt:        new Date(),
+    allergens: {
+      create: allergens.map((allergen) => ({ allergen })),
     },
-    include: { allergens: true },
-  });
+  },
+  include: { allergens: true },
+});
 }
 
 export interface ListFoodBagsOptions {

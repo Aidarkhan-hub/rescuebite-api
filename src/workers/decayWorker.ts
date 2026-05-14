@@ -47,5 +47,5 @@ export function startDecayWorker(): void {
     }
   });
 
-  console.log(`✅ Decay worker started (every ${intervalMinutes} min)`);
+  console.log(` Decay worker started (every ${intervalMinutes} min)`);
 }

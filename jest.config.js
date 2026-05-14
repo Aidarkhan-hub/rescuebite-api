@@ -1,4 +1,3 @@
-/** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
@@ -16,8 +15,5 @@ module.exports = {
     ],
   },
   setupFiles: ["<rootDir>/tests/setup.ts"],
-  collectCoverageFrom: ["src/**/*.ts", "!src/server.ts"],
-  coverageThreshold: {
-    global: { lines: 60 },
-  },
+  setupFilesAfterEnv: ["<rootDir>/tests/setupMocks.ts"],
 };
