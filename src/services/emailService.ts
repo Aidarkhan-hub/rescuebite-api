@@ -1,12 +1,16 @@
-import { Resend } from "resend";
-import { env } from "../config/env";
+import nodemailer from "nodemailer";
 
-const resend = new Resend(env.RESEND_API_KEY);
-const FROM = "RescueBite <onboarding@resend.dev>";
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+});
 
-async function safeSend(payload: Parameters<typeof resend.emails.send>[0]): Promise<void> {
+async function safeSend(options: nodemailer.SendMailOptions): Promise<void> {
   try {
-    await resend.emails.send(payload);
+    await transporter.sendMail(options);
   } catch (err) {
     console.warn("[EmailService] Failed to send email (non-fatal):", (err as Error).message);
   }
@@ -17,9 +21,9 @@ export async function sendVerificationEmail(
   name: string,
   token: string
 ): Promise<void> {
-  const link = `${env.APP_URL}/api/v1/auth/verify-email?token=${token}`;
+  const link = `${process.env.APP_URL}/api/v1/auth/verify-email?token=${token}`;
   await safeSend({
-    from: FROM,
+    from: `"RescueBite" <${process.env.GMAIL_USER}>`,
     to,
     subject: "Verify your RescueBite account",
     html: `
@@ -38,9 +42,9 @@ export async function sendPasswordResetEmail(
   name: string,
   token: string
 ): Promise<void> {
-  const link = `${env.APP_URL}/api/v1/auth/reset-password?token=${token}`;
+  const link = `${process.env.APP_URL}/api/v1/auth/reset-password?token=${token}`;
   await safeSend({
-    from: FROM,
+    from: `"RescueBite" <${process.env.GMAIL_USER}>`,
     to,
     subject: "Reset your RescueBite password",
     html: `
@@ -65,7 +69,7 @@ export async function sendReservationConfirmationEmail(
   const price = (pricePaidCents / 100).toFixed(2);
   const deadline = pickupDeadline.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
   await safeSend({
-    from: FROM,
+    from: `"RescueBite" <${process.env.GMAIL_USER}>`,
     to,
     subject: `Reservation confirmed: ${bagTitle}`,
     html: `
@@ -76,7 +80,7 @@ export async function sendReservationConfirmationEmail(
         <tr><td style="padding:8px;border:1px solid #e5e7eb"><strong>Price paid</strong></td><td style="padding:8px;border:1px solid #e5e7eb">$${price}</td></tr>
         <tr><td style="padding:8px;border:1px solid #e5e7eb"><strong>Pick up before</strong></td><td style="padding:8px;border:1px solid #e5e7eb">${deadline}</td></tr>
       </table>
-      <p>Please pick up your order before the deadline — food cannot be held past this time.</p>
+      <p>Please pick up your order before the deadline.</p>
     `,
   });
 }
@@ -89,13 +93,13 @@ export async function sendPickupReminderEmail(
 ): Promise<void> {
   const deadline = pickupDeadline.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
   await safeSend({
-    from: FROM,
+    from: `"RescueBite" <${process.env.GMAIL_USER}>`,
     to,
     subject: `Pickup reminder: ${bagTitle}`,
     html: `
       <h2>Don't forget your food bag!</h2>
       <p>Hi ${name}, your food bag <strong>${bagTitle}</strong> must be picked up by <strong>${deadline}</strong>.</p>
-      <p>If you can no longer pick it up, please cancel your reservation so someone else can benefit.</p>
+      <p>If you can no longer pick it up, please cancel your reservation.</p>
     `,
   });
 }
