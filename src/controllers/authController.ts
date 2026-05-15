@@ -7,13 +7,16 @@ import { BadRequestError } from "../utils/errors";
 
 const registerSchema = z.object({
   email: z.string().email("Invalid email format"),
-  name: z.string().min(2, "Name must be at least 2 chars").max(120),
+  name: z.string().min(2).max(120),
   password: z
     .string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[0-9]/, "Password must contain at least one digit"),
-  role: z.enum(["RECIPIENT", "DONOR"]).optional(), // ADMIN cannot self-register
+    .min(8)
+    .regex(/[A-Z]/, "Must contain uppercase")
+    .regex(/[0-9]/, "Must contain digit"),
+  // Роль разрешена только в dev — на проде игнорируется
+  role: process.env.NODE_ENV === "development"
+    ? z.enum(["RECIPIENT", "DONOR"]).optional()
+    : z.never().optional(),
 });
 
 const loginSchema = z.object({

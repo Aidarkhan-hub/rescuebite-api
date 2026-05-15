@@ -69,8 +69,8 @@ export class AuthService {
         email: input.email.toLowerCase(),
         name: input.name.trim(),
         passwordHash,
-        role: input.role ?? Role.RECIPIENT,
-        isEmailVerified: false,
+        role: (input.role as Role) ?? Role.RECIPIENT,
+        isEmailVerified: env.nodeEnv === "development",
         emailVerificationToken,
       },
       select: { id: true, email: true, name: true, role: true },
@@ -94,7 +94,7 @@ export class AuthService {
     // We must find the user whose stored hash matches this token.
     // bcrypt.compare is O(n_users) — acceptable for now; at scale use a lookup index.
     const users = await prisma.user.findMany({
-      where: { isEmailVerified: false, emailVerificationToken: { not: null } },
+      where: { isEmailVerified: env.nodeEnv === "development", emailVerificationToken: { not: null } },
       select: { id: true, emailVerificationToken: true },
     });
 
